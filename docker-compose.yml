@@ -1,0 +1,19 @@
+# Three fake SNMP devices for testing NetMon without real routers.
+#   docker compose up -d --build
+# Then add them in NetMon as 127.0.0.1 with SNMP port 1161 / 1162 / 1163 (community: public).
+services:
+  router-sim:
+    build: ./docker/snmpd
+    container_name: netmon-router-sim
+    ports: ["1161:161/udp"]
+    restart: unless-stopped
+  switch-sim:
+    build: ./docker/snmpd
+    container_name: netmon-switch-sim
+    ports: ["1162:161/udp"]
+    restart: unless-stopped
+  server-sim:
+    build: ./docker/snmpd
+    container_name: netmon-server-sim
+    ports: ["1163:161/udp"]
+    restart: unless-stopped

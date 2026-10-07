@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMon - Network Operations Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink:#17212b; --muted:#5d6b79; --paper:#f1f4f7; --panel:#ffffff; --line:#d8dfe6;
+    --blue:#1d5fd1; --up:#178a54; --down:#c23b2e; --warn:#b97a0b; --unknown:#8793a0;
+    --font: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:var(--font); color:var(--ink); background:var(--paper); font-size:14px; line-height:1.45; }
+  .num { font-variant-numeric: tabular-nums; }
+  header { background:var(--ink); color:#fff; padding:14px 24px; display:flex; gap:24px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header small { color:#9fb0c0; display:block; font-weight:400; font-size:12px; }
+  .strip { flex:1; min-width:260px; max-width:560px; }
+  .strip-bar { display:flex; height:10px; border-radius:5px; overflow:hidden; background:#33424f; }
+  .strip-bar i { display:block; height:100%; transition:width .4s; }
+  .strip-legend { display:flex; gap:18px; margin-top:6px; font-size:13px; color:#d5dee7; }
+  .strip-legend b { color:#fff; font-size:15px; margin-right:3px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+  main { padding:20px 24px 40px; max-width:1500px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:20px; align-items:start; }
+  @media (max-width:1100px) { .grid { grid-template-columns:1fr; } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:6px; margin-bottom:20px; }
+  section > h2 { font-size:14px; margin:0; padding:12px 16px; border-bottom:1px solid var(--line); font-weight:600;
+                 display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .pad { padding:14px 16px; }
+  details.add { margin-bottom:20px; background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+  details.add summary { cursor:pointer; padding:12px 16px; font-weight:600; }
+  details.add form { padding:0 16px 16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); gap:3px; }
+  label.inline { flex-direction:row; align-items:center; gap:6px; color:var(--ink); font-size:13px; padding-bottom:8px; }
+  input, select { font:inherit; padding:7px 9px; border:1px solid #b9c4cf; border-radius:4px; background:#fff; color:var(--ink); }
+  input[type=checkbox] { padding:0; }
+  button { font:inherit; padding:7px 14px; border-radius:4px; border:1px solid var(--blue); background:var(--blue); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--ink); border-color:#b9c4cf; }
+  button.small { padding:3px 9px; font-size:12px; }
+  button:hover { filter:brightness(.95); }
+  :focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+  .msg { font-size:13px; padding-bottom:8px; }
+  .msg.err { color:var(--down); } .msg.ok { color:var(--up); }
+  .tablewrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:9px 12px; text-align:left; border-bottom:1px solid #edf1f4; white-space:nowrap; }
+  th { font-weight:600; font-size:12px; color:var(--muted); background:#f8fafb; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:#f6f9fc; }
+  tbody tr.sel { background:#eaf1fc; box-shadow: inset 3px 0 0 var(--blue); }
+  tbody tr.isdown td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+  .badge { display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:12px; }
+  .badge .dot { margin:0; }
+  .UP { color:var(--up); } .UP .dot { background:var(--up); }
+  .DOWN { color:var(--down); } .DOWN .dot { background:var(--down); }
+  .UNKNOWN { color:var(--unknown); } .UNKNOWN .dot { background:var(--unknown); }
+  .sub { color:var(--muted); font-size:12px; }
+  .meter { display:flex; align-items:center; gap:8px; min-width:92px; }
+  .meter .track { flex:1; height:6px; background:#e6ebf0; border-radius:3px; overflow:hidden; }
+  .meter .fill { height:100%; background:var(--up); }
+  .meter.hot .fill { background:var(--down); } .meter.hot { color:var(--down); font-weight:600; }
+  .range { display:flex; gap:6px; }
+  .range button.active { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; padding:14px 16px; }
+  .chartbox h3 { font-size:12px; color:var(--muted); margin:0 0 6px; font-weight:600; }
+  .chartbox div { position:relative; height:200px; }
+  ul.alerts { list-style:none; margin:0; padding:0; max-height:560px; overflow-y:auto; }
+  ul.alerts li { padding:10px 16px; border-bottom:1px solid #edf1f4; border-left:3px solid transparent; }
+  ul.alerts li.CRITICAL { border-left-color:var(--down); } ul.alerts li.WARNING { border-left-color:var(--warn); }
+  ul.alerts li.RESOLVED { border-left-color:var(--up); }
+  ul.alerts .sev { font-weight:600; font-size:12px; margin-right:6px; }
+  .CRITICAL .sev { color:var(--down); } .WARNING .sev { color:var(--warn); } .RESOLVED .sev { color:var(--up); }
+  .empty { padding:26px 16px; color:var(--muted); text-align:center; }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:10px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>NetMon</h1><small>Network operations dashboard</small></div>
+  <div class="strip">
+    <div class="strip-bar" role="img" aria-label="Device status distribution">
+      <i id="barUp" style="background:var(--up);width:0"></i>
+      <i id="barDown" style="background:var(--down);width:0"></i>
+      <i id="barUnk" style="background:var(--unknown);width:0"></i>
+    </div>
+    <div class="strip-legend num">
+      <span><span class="dot" style="background:var(--up)"></span><b id="cUp">0</b>up</span>
+      <span><span class="dot" style="background:var(--down)"></span><b id="cDown">0</b>down</span>
+      <span><span class="dot" style="background:var(--unknown)"></span><b id="cUnk">0</b>pending</span>
+      <span><b id="cAlerts">0</b>active alerts</span>
+    </div>
+  </div>
+  <div class="sub" style="color:#9fb0c0" id="refreshInfo">connecting...</div>
+</header>
+
+<main>
+  <details class="add" id="addBox">
+    <summary>Add a device</summary>
+    <form id="addForm">
+      <label>Name<input id="fName" required maxlength="60" placeholder="Core-Router-1"></label>
+      <label>IP address or hostname<input id="fIp" required maxlength="253" placeholder="192.168.1.1"></label>
+      <label>Type
+        <select id="fType"><option>router</option><option>switch</option><option selected>server</option><option>other</option></select>
+      </label>
+      <label class="inline"><input type="checkbox" id="fSnmp"> Monitor with SNMP (CPU, RAM, traffic)</label>
+      <label>SNMP port<input id="fPort" type="number" value="161" min="1" max="65535" style="width:90px"></label>
+      <label>Community<input id="fComm" value="public" maxlength="64" style="width:120px"></label>
+      <button type="submit">Add device</button>
+      <button type="button" class="ghost" id="testNotify">Send test alert</button>
+      <div class="msg" id="formMsg" role="status"></div>
+    </form>
+  </details>
+
+  <div class="grid">
+    <div>
+      <section>
+        <h2>Devices <span class="sub" id="thrInfo"></span></h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Status</th><th>Device</th><th>Latency</th><th>Loss</th><th>CPU</th><th>RAM</th>
+              <th>Traffic in / out</th><th>Interface</th><th>Checked</th><th></th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="emptyMsg" hidden>No devices yet. Open "Add a device" above and try <b>127.0.0.1</b>.</div>
+      </section>
+
+      <section>
+        <h2><span id="chartTitle">Select a device to see its graphs</span>
+          <span class="range" id="rangeBtns">
+            <button class="ghost small" data-m="15">15 min</button>
+            <button class="ghost small active" data-m="60">1 hour</button>
+            <button class="ghost small" data-m="360">6 hours</button>
+            <button class="ghost small" data-m="1440">24 hours</button>
+          </span>
+        </h2>
+        <div class="charts">
+          <div class="chartbox"><h3 id="bwTitle">Bandwidth</h3><div><canvas id="chBw"></canvas></div></div>
+          <div class="chartbox"><h3>CPU and RAM (%)</h3><div><canvas id="chRes"></canvas></div></div>
+          <div class="chartbox"><h3>Latency (ms)</h3><div><canvas id="chLat"></canvas></div></div>
+          <div class="chartbox"><h3>Packet loss (%)</h3><div><canvas id="chLoss"></canvas></div></div>
+        </div>
+      </section>
+    </div>
+
+    <section>
+      <h2>Alert history</h2>
+      <ul class="alerts" id="alertList"></ul>
+      <div class="empty" id="noAlerts" hidden>No alerts yet.</div>
+    </section>
+  </div>
+</main>
+<footer>Refreshes every 5 seconds. Prototype for learning and demonstration.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; };
+let selected = null, rangeMin = 60, thr = {cpu:85, ram:90}, charts = {};
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : j.detail.map(d => d.msg).join(", "); } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+function fmtBps(b) {
+  if (b == null) return "-";
+  if (b >= 1e9) return (b / 1e9).toFixed(2) + " Gbps";
+  if (b >= 1e6) return (b / 1e6).toFixed(2) + " Mbps";
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + " Kbps";
+  return Math.round(b) + " bps";
+}
+function ago(ts) {
+  if (!ts) return "-";
+  const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  return s < 60 ? s + "s ago" : s < 3600 ? Math.floor(s / 60) + "m ago" : new Date(ts * 1000).toLocaleTimeString();
+}
+function meter(v, limit) {
+  if (v == null) return '<span class="sub">-</span>';
+  const hot = v >= limit ? " hot" : "";
+  return `<div class="meter num${hot}"><span>${v.toFixed(0)}%</span><div class="track"><div class="fill" style="width:${Math.min(100, v)}%"></div></div></div>`;
+}
+
+function renderSummary(s) {
+  thr = s.thresholds;
+  $("cUp").textContent = s.up; $("cDown").textContent = s.down; $("cUnk").textContent = s.unknown;
+  $("cAlerts").textContent = s.active_alerts;
+  const t = Math.max(1, s.total);
+  $("barUp").style.width = (s.up / t * 100) + "%";
+  $("barDown").style.width = (s.down / t * 100) + "%";
+  $("barUnk").style.width = (s.unknown / t * 100) + "%";
+  $("thrInfo").textContent = `alert limits: CPU ${thr.cpu}%, RAM ${thr.ram}%, loss ${thr.loss}%, latency ${thr.latency_ms} ms`;
+}
+
+function renderDevices(list) {
+  $("emptyMsg").hidden = list.length > 0;
+  if (selected === null && list.length) selected = list[0].id;
+  if (selected !== null && !list.some(d => d.id === selected)) selected = list.length ? list[0].id : null;
+  $("tbody").innerHTML = list.map(d => `
+    <tr data-id="${d.id}" class="${d.id === selected ? "sel" : ""} ${d.status === "DOWN" ? "isdown" : ""}">
+      <td><span class="badge ${esc(d.status)}"><span class="dot"></span>${esc(d.status)}</span>
+          ${d.status === "DOWN" && d.down_reason ? `<div class="sub">${esc(d.down_reason)}</div>` : ""}</td>
+      <td><b>${esc(d.name)}</b><div class="sub">${esc(d.ip)}${d.snmp_enabled ? " : SNMP " + d.snmp_port : ""} (${esc(d.device_type)})</div></td>
+      <td class="num">${d.latency_ms != null ? d.latency_ms.toFixed(1) + " ms" : "-"}</td>
+      <td class="num">${d.packet_loss != null ? d.packet_loss.toFixed(0) + "%" : "-"}</td>
+      <td>${d.snmp_enabled ? meter(d.cpu_percent, thr.cpu) : '<span class="sub">no SNMP</span>'}</td>
+      <td>${d.snmp_enabled ? meter(d.ram_percent, thr.ram) : '<span class="sub">no SNMP</span>'}</td>
+      <td class="num">${d.snmp_enabled ? fmtBps(d.in_bps) + " / " + fmtBps(d.out_bps) : "-"}</td>
+      <td class="num">${d.snmp_enabled && d.if_name ? esc(d.if_name) + (d.if_status ? " (" + esc(d.if_status) + ")" : "") : "-"}</td>
+      <td class="sub num">${ago(d.last_checked)}</td>
+      <td><button class="ghost small" data-del="${d.id}" aria-label="Delete ${esc(d.name)}">Delete</button></td>
+    </tr>`).join("");
+  const dev = list.find(d => d.id === selected);
+  $("chartTitle").textContent = dev ? "Graphs: " + dev.name : "Select a device to see its graphs";
+}
+
+function renderAlerts(list) {
+  $("noAlerts").hidden = list.length > 0;
+  $("alertList").innerHTML = list.map(a => `
+    <li class="${esc(a.severity)}"><span class="sev">${esc(a.severity)}</span>
+      <span class="sub num">${new Date(a.ts * 1000).toLocaleString()}</span><div>${esc(a.message)}</div></li>`).join("");
+}
+
+function makeChart(id, datasets, yMax) {
+  charts[id] = new Chart($(id), {
+    type: "line",
+    data: { labels: [], datasets: datasets.map(d => ({ ...d, borderWidth: 1.8, pointRadius: 0, tension: .25, spanGaps: false })) },
+    options: { animation: false, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: datasets.length > 1, position: "bottom", labels: { boxWidth: 10 } } },
+      scales: { y: { beginAtZero: true, max: yMax }, x: { ticks: { maxTicksLimit: 6 } } } }
+  });
+}
+function initCharts() {
+  if (typeof Chart === "undefined") { $("chartTitle").textContent = "Charts need internet access (Chart.js CDN)"; return; }
+  makeChart("chBw", [{ label: "In", borderColor: "#1d5fd1" }, { label: "Out", borderColor: "#b97a0b" }]);
+  makeChart("chRes", [{ label: "CPU", borderColor: "#c23b2e" }, { label: "RAM", borderColor: "#178a54" }], 100);
+  makeChart("chLat", [{ label: "Latency", borderColor: "#1d5fd1" }]);
+  makeChart("chLoss", [{ label: "Loss", borderColor: "#c23b2e" }], 100);
+}
+function setChart(id, labels, series) {
+  const c = charts[id]; if (!c) return;
+  c.data.labels = labels; series.forEach((s, i) => c.data.datasets[i].data = s); c.update("none");
+}
+async function loadMetrics() {
+  if (selected === null || !charts.chBw) return;
+  let rows;
+  try { rows = await api(`/api/devices/${selected}/metrics?minutes=${rangeMin}`); } catch (e) { return; }
+  const labels = rows.map(r => new Date(r.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: rangeMin <= 60 ? "2-digit" : undefined }));
+  const maxBps = Math.max(0, ...rows.map(r => Math.max(r.in_bps || 0, r.out_bps || 0)));
+  const [div, unit] = maxBps >= 1e6 ? [1e6, "Mbps"] : [1e3, "Kbps"];
+  $("bwTitle").textContent = "Bandwidth (" + unit + ")";
+  const conv = v => v == null ? null : +(v / div).toFixed(3);
+  setChart("chBw", labels, [rows.map(r => conv(r.in_bps)), rows.map(r => conv(r.out_bps))]);
+  setChart("chRes", labels, [rows.map(r => r.cpu_percent), rows.map(r => r.ram_percent)]);
+  setChart("chLat", labels, [rows.map(r => r.latency_ms)]);
+  setChart("chLoss", labels, [rows.map(r => r.packet_loss)]);
+}
+
+async function refresh() {
+  try {
+    const [s, devs, al] = await Promise.all([api("/api/summary"), api("/api/devices"), api("/api/alerts?limit=40")]);
+    renderSummary(s); renderDevices(devs); renderAlerts(al); await loadMetrics();
+    $("refreshInfo").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) { $("refreshInfo").textContent = "cannot reach server"; }
+}
+
+$("tbody").addEventListener("click", async e => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    if (confirm("Delete this device and its history?")) { await api("/api/devices/" + del.dataset.del, { method: "DELETE" }); refresh(); }
+    return;
+  }
+  const tr = e.target.closest("tr[data-id]");
+  if (tr) { selected = +tr.dataset.id; refresh(); }
+});
+$("rangeBtns").addEventListener("click", e => {
+  const b = e.target.closest("button[data-m]"); if (!b) return;
+  rangeMin = +b.dataset.m;
+  document.querySelectorAll("#rangeBtns button").forEach(x => x.classList.toggle("active", x === b));
+  loadMetrics();
+});
+function say(text, ok) { const m = $("formMsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); }
+$("addForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    const r = await api("/api/devices", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("fName").value, ip: $("fIp").value, device_type: $("fType").value,
+        snmp_enabled: $("fSnmp").checked, snmp_port: +$("fPort").value || 161, community: $("fComm").value || "public" }) });
+    say(r.message, true); e.target.reset(); $("fPort").value = 161; $("fComm").value = "public"; refresh();
+  } catch (err) { say("Could not add device: " + err.message, false); }
+});
+$("testNotify").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/test-notification", { method: "POST" });
+    if (!r.telegram_configured && !r.email_configured) say("No Telegram or email settings found in .env", false);
+    else say(`Test sent. Telegram: ${r.sent.telegram}, Email: ${r.sent.email}`, true);
+  } catch (err) { say(err.message, false); }
+});
+
+initCharts(); refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>
